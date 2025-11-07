@@ -23,8 +23,7 @@ import heapq
 import subprocess
 
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
-project_id = os.environ.get('WATSONX_AI_PROJECT_ID')
-api_key = os.environ.get("WATSONX_APIKEY")
+project_id = "skills-network"
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -57,8 +56,7 @@ model_clip, preprocess_clip = clip.load("ViT-B/32", device="cpu")
 
 # Load LLM
 credentials = Credentials(
-                url = "https://us-south.ml.cloud.ibm.com",
-                api_key = api_key
+                url = "https://us-south.ml.cloud.ibm.com"
                 )
 
 # Get sample parameter values
