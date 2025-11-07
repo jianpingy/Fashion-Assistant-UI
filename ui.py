@@ -272,7 +272,8 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
         with gr.Column():
             gr.Markdown("### AI Fashion Gallery")
-            gr.Markdown("#### Each editing takes about 90 seconds.")
+            gr.Markdown("#### Each editing takes about 120 seconds (2 minutes).")
+            gr.Markdown('#### If you have ERROR, please retry.')
             gallery_output = gr.Gallery(
                 label="AI Designs",
                 show_label=False,
