@@ -227,9 +227,9 @@ def fashion_design(query, image_path):
 
     client = OpenAI(api_key=OPENAI_API_KEY)
     all_image_urls = []
-    n = 2
+    n = 3
     print('Editing....')
-    for i in range(num_masks):
+    for i in range(num_masks-1):
         mask_path = f"mask_candidates/mask_option{i}.png"
         response = client.images.edit(
             model='dall-e-2',

@@ -3,6 +3,7 @@ This repo creates a simple web app that edits an image based on a given prompt, 
 - Uses LLM to understand the prompt;
 - Uses CLIPSeg and SAM to identify the region to be edited;
 - Uses DALL-E to edit accordingly.
+- Uses CLIP and BLIP captioning to evaluate the quality of the edited images.
 
 ## Get Started
 Install the required packages.
