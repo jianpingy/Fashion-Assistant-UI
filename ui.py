@@ -294,7 +294,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
     # 🔹 Example (image, query) pairs
     examples = [
-        ["example_images/cat-blue-cloth.png", "change the blue shirt to a shirt with pumpkins"],
+        ["example_images/cat-blue-cloth.png", "change the blue cloth to a shirt with pumpkins"],
         ["example_images/lady-white-shirt.png", "change the white shirt to a pink sweater"]
     ]
 
