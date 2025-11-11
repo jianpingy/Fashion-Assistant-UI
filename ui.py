@@ -1,9 +1,7 @@
 import gradio as gr
-from transformers import BlipProcessor, BlipForConditionalGeneration
 from transformers import CLIPSegProcessor, CLIPSegForImageSegmentation
 from PIL import Image
 import torch
-import clip
 import torch.nn.functional as F
 from torchvision.io import read_image, ImageReadMode
 from torchvision.transforms.functional import to_pil_image
@@ -21,6 +19,7 @@ import requests
 import os
 import heapq
 import subprocess
+from io import BytesIO
 
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 project_id = "skills-network"
@@ -47,13 +46,6 @@ model_type = "vit_b"
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 sam.to(device=device)
 
-# Load BLIP Captioning Model
-processor_caption = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-model_caption = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-
-# Load CLIP Model
-model_clip, preprocess_clip = clip.load("ViT-B/32", device="cpu")
-
 # Load LLM
 credentials = Credentials(
                 url = "https://us-south.ml.cloud.ibm.com"
@@ -71,34 +63,6 @@ model_chat = ModelInference(
     project_id=project_id,
     params=params,
 )
-
-def caption(image_path):
-    image = Image.open(image_path)
-    inputs = processor_caption(images=image, return_tensors="pt")
-    out = model_caption.generate(**inputs)
-
-    caption = processor_caption.decode(out[0], skip_special_tokens=True)
-    return caption
-
-def similarity_score(original_caption, query, edited_image_path):
-    image = preprocess_clip(Image.open(edited_image_path)).unsqueeze(0) 
-
-    #Tokenize the text (caption)
-    text = clip.tokenize([f"{original_caption}: {query}"]).to("cpu")
-
-    #Encode both image and text into CLIP’s embedding space
-    with torch.no_grad():
-        image_features = model_clip.encode_image(image)
-        text_features = model_clip.encode_text(text)
-
-    #Normalize embeddings (important for cosine similarity)
-    image_features = F.normalize(image_features, p=2, dim=-1)
-    text_features = F.normalize(text_features, p=2, dim=-1)
-
-    #Compute cosine similarity
-    cosine_sim = (image_features @ text_features.T).item()
-
-    return cosine_sim
 
 def process_dalle_images(response, filename, image_dir):
     # save the images
@@ -182,11 +146,6 @@ def fashion_design(query, mask_input, image_path):
         keys = list(response_output.keys())
         to_be_changed = response_output[keys[0]]
         will_change_to = response_output[keys[1]]
-
-    #### Image Captioning
-    caption_original = caption(image_path)
-
-    print(type(mask_input))
 
     if len(mask_input['layers']) > 0:
         num_masks = 2
@@ -274,7 +233,7 @@ def fashion_design(query, mask_input, image_path):
 
 
     client = OpenAI(api_key=OPENAI_API_KEY)
-    all_image_urls = []
+    finalized_urls = []
     n = 3
     print('Editing....')
     for i in range(num_masks-1):
@@ -291,15 +250,7 @@ def fashion_design(query, mask_input, image_path):
         edit_filepaths = process_dalle_images(response, f"edits_mask{i}", 'edited_images')
 
         for edit_filepath in edit_filepaths:
-            sim_score = similarity_score(caption_original, query, edit_filepath)
-            if sim_score > 0.29:
-                heapq.heappush(all_image_urls,(-sim_score,edit_filepath))
-    
-    print('Finalizing....')
-    finalized_urls = []
-    while len(all_image_urls) > 0:
-        _, pth = heapq.heappop(all_image_urls)
-        finalized_urls.append(pth)
+                finalized_urls.append(edit_filepath)
 
     print('Out....')
     if len(finalized_urls) == 0:
