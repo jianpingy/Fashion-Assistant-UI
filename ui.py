@@ -112,7 +112,33 @@ def process_dalle_images(response, filename, image_dir):
 
     return filepaths
 
-def fashion_design(query, image_path):
+def extract_mask_only(masked_image):
+    """
+    Extracts the mask (alpha channel) from the PIL Image object 
+    returned by gr.ImageMask.
+    """
+    if masked_image is None:
+        return np.zeros((100, 100), dtype=np.uint8) # Return a blank mask if no image
+    
+    # 1. Convert the image to RGBA (Red, Green, Blue, Alpha)
+    # The mask is stored in the Alpha channel.
+    masked_image = Image.fromarray(masked_image)
+    img_rgba = masked_image.convert("RGBA")
+    
+    # 2. Convert to a NumPy array
+    img_array = np.array(img_rgba)
+    
+    # 3. The Alpha channel is the 4th channel (index 3)
+    # This channel's values will be 0 where there is no mask, and > 0 where there is a mask.
+    mask_channel = img_array[:, :, 3] 
+
+    # # If you want a standard 8-bit grayscale image of the mask:
+    # mask_image = Image.fromarray(mask_channel)
+
+    return mask_channel
+
+
+def fashion_design(query, mask_input, image_path):
     #### Understand user's query
     error_flag = False
     prompt = f"""
@@ -160,50 +186,11 @@ def fashion_design(query, image_path):
     #### Image Captioning
     caption_original = caption(image_path)
 
-    #### CLIPSeg
-    # Read as a uint8 tensor [C, H, W] in RGB (forces 3 channels; drops alpha if present)
-    img_tensor = read_image(image_path, mode=ImageReadMode.RGB)
+    print(type(mask_input))
 
-    # Convert to PIL.Image in RGB
-    image_pil = to_pil_image(img_tensor)
-
-    # Send the text_prompt and the image_pil to the model for prediction
-    inputs = processor_clipseg(text=[to_be_changed], images=[image_pil], return_tensors="pt")
-    with torch.no_grad():
-        outputs = model_clipseg(**inputs)
-        preds = torch.sigmoid(outputs.logits)  # mask probabilities
-
-    # Convert the predicted mask to be a binary mask of only 0 or 1.
-    mask = preds.squeeze().cpu().numpy()
-    mask_binary = (mask > 0.05).astype(np.uint8)  # threshold mask
-
-    # Generate the mask from the mask_binary
-    mask_pil = Image.fromarray(mask_binary*255)
-    rough_mask_np = np.array(mask_pil.convert("L")) > 128
-
-    #### SAM
-    predictor = SamPredictor(sam)
-    numpy_img = torch.permute(img_tensor,[1,2,0]).numpy()
-    predictor.set_image(numpy_img)
-
-    w, h, _ = numpy_img.shape
-    wm, hm = rough_mask_np.shape
-
-    # Derive bounding box from rough mask
-    y, x = np.where(rough_mask_np)
-    bbox = np.array([min(x)/hm*h, min(y)/wm*w, max(x)/hm*h, max(y)/wm*w])  # [x0, y0, x1, y1]
-
-    masks, _, _ = predictor.predict(
-        point_coords=None,
-        point_labels=None,
-        box=bbox[None, :],
-        multimask_output=True,
-    )
-
-    num_masks = len(masks)
-    for i in range(num_masks):
-        # We'll now reverse the mask so that it is clear and everything else is white
-        chosen_mask = masks[i]
+    if len(mask_input['layers']) > 0:
+        num_masks = 2
+        chosen_mask = extract_mask_only(mask_input['layers'][0])
         chosen_mask = chosen_mask.astype("uint8")
         chosen_mask[chosen_mask != 0] = 255
         chosen_mask[chosen_mask == 0] = 1
@@ -211,17 +198,80 @@ def fashion_design(query, image_path):
         chosen_mask[chosen_mask == 1] = 255
 
         # create a base blank mask
-        width = 1024
-        height = 1024
+        width = chosen_mask.shape[0]
+        height = chosen_mask.shape[1]
         mask = Image.new("RGBA", (width, height), (0, 0, 0, 1))  # create an opaque image mask
 
         # Convert mask back to pixels to add our mask replacing the third dimension
         pix = np.array(mask)
         pix[:, :, 3] = chosen_mask
 
-        # Convert pixels back to an RGBA image and display
         new_mask = Image.fromarray(pix, "RGBA")
-        new_mask.save(f"mask_candidates/mask_option{i}.png")
+        new_mask.save(f"mask_candidates/mask_option{0}.png")
+    else:
+        #### CLIPSeg
+        # Read as a uint8 tensor [C, H, W] in RGB (forces 3 channels; drops alpha if present)
+        img_tensor = read_image(image_path, mode=ImageReadMode.RGB)
+
+        # Convert to PIL.Image in RGB
+        image_pil = to_pil_image(img_tensor)
+
+        # Send the text_prompt and the image_pil to the model for prediction
+        inputs = processor_clipseg(text=[to_be_changed], images=[image_pil], return_tensors="pt")
+        with torch.no_grad():
+            outputs = model_clipseg(**inputs)
+            preds = torch.sigmoid(outputs.logits)  # mask probabilities
+
+        # Convert the predicted mask to be a binary mask of only 0 or 1.
+        mask = preds.squeeze().cpu().numpy()
+        mask_binary = (mask > 0.05).astype(np.uint8)  # threshold mask
+
+        # Generate the mask from the mask_binary
+        mask_pil = Image.fromarray(mask_binary*255)
+        rough_mask_np = np.array(mask_pil.convert("L")) > 128
+
+        #### SAM
+        predictor = SamPredictor(sam)
+        numpy_img = torch.permute(img_tensor,[1,2,0]).numpy()
+        predictor.set_image(numpy_img)
+
+        w, h, _ = numpy_img.shape
+        wm, hm = rough_mask_np.shape
+
+        # Derive bounding box from rough mask
+        y, x = np.where(rough_mask_np)
+        bbox = np.array([min(x)/hm*h, min(y)/wm*w, max(x)/hm*h, max(y)/wm*w])  # [x0, y0, x1, y1]
+
+        masks, _, _ = predictor.predict(
+            point_coords=None,
+            point_labels=None,
+            box=bbox[None, :],
+            multimask_output=True,
+        )
+
+        num_masks = len(masks)
+        for i in range(num_masks):
+            # We'll now reverse the mask so that it is clear and everything else is white
+            chosen_mask = masks[i]
+            chosen_mask = chosen_mask.astype("uint8")
+            chosen_mask[chosen_mask != 0] = 255
+            chosen_mask[chosen_mask == 0] = 1
+            chosen_mask[chosen_mask == 255] = 0
+            chosen_mask[chosen_mask == 1] = 255
+
+            # create a base blank mask
+            width = chosen_mask.shape[0]
+            height = chosen_mask.shape[1]
+            mask = Image.new("RGBA", (width, height), (0, 0, 0, 1))  # create an opaque image mask
+
+            # Convert mask back to pixels to add our mask replacing the third dimension
+            pix = np.array(mask)
+            pix[:, :, 3] = chosen_mask
+
+            # Convert pixels back to an RGBA image and display
+            new_mask = Image.fromarray(pix, "RGBA")
+            new_mask.save(f"mask_candidates/mask_option{i}.png")
+
 
     client = OpenAI(api_key=OPENAI_API_KEY)
     all_image_urls = []
@@ -235,7 +285,7 @@ def fashion_design(query, image_path):
             mask=open(mask_path, "rb"),  # from right above
             prompt=will_change_to,  # provide a prompt to fill the space
             n=n,
-            size="1024x1024",
+            size="512x512",
             response_format="url",
         )
         edit_filepaths = process_dalle_images(response, f"edits_mask{i}", 'edited_images')
@@ -267,12 +317,14 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     with gr.Row():
         with gr.Column():
             image_input = gr.Image(label="Upload an Image", type="filepath")
+            gr.Markdown('#### Optional: If you want to draw your own mask for accuracy, please draw here.')
+            mask_input = gr.ImageMask(label="Draw mask on image")
             query_input = gr.Textbox(label="Enter your prompt", placeholder="e.g., change the shirt to a sweater")
             submit_button = gr.Button("DESIGN!", variant="primary")
 
         with gr.Column():
             gr.Markdown("### AI Fashion Gallery")
-            gr.Markdown("#### Each editing takes about 120 seconds (2 minutes).")
+            gr.Markdown("#### Each editing could take about 120 seconds (2 minutes).")
             gr.Markdown('#### If you have ERROR, please retry.')
             gallery_output = gr.Gallery(
                 label="AI Designs",
@@ -288,7 +340,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     # When button is clicked, call function f
     submit_button.click(
         fn=fashion_design,
-        inputs=[query_input,image_input],
+        inputs=[query_input,mask_input,image_input],
         outputs=[gallery_output,message_output]
     )
 
