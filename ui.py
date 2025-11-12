@@ -64,16 +64,21 @@ model_chat = ModelInference(
     params=params,
 )
 
-def process_dalle_images(response, filename, image_dir):
-    # save the images
-    urls = [datum.url for datum in response.data]  # extract URLs
-    images = [requests.get(url).content for url in urls]  # download images
-    image_names = [f"{filename}_{i + 1}.png" for i in range(len(images))]  # create names
-    filepaths = [os.path.join(image_dir, name) for name in image_names]  # create filepaths
-    for image, filepath in zip(images, filepaths):  # loop through the variations
-        with open(filepath, "wb") as image_file:  # open the file
-            image_file.write(image)  # write the image to the file
+def process_dalle_images(response, filename, image_dir, width, height):
+    os.makedirs(image_dir, exist_ok=True)  # ensure the directory exists
 
+    urls = [datum.url for datum in response.data]  # extract URLs
+    image_names = [f"{filename}_{i + 1}.png" for i in range(len(urls))]  # create names
+    filepaths = [os.path.join(image_dir, name) for name in image_names]  # create filepaths
+
+    for url, filepath in zip(urls, filepaths):
+        # download and open image
+        img_data = requests.get(url).content
+        with Image.open(BytesIO(img_data)) as img:
+            # resize and save (overwrite original path)
+            img = img.resize((width, height), Image.LANCZOS)
+            img.save(filepath, format="PNG")
+    
     return filepaths
 
 def extract_mask_only(masked_image):
@@ -157,8 +162,8 @@ def fashion_design(query, mask_input, image_path):
         chosen_mask[chosen_mask == 1] = 255
 
         # create a base blank mask
-        width = chosen_mask.shape[0]
-        height = chosen_mask.shape[1]
+        width = chosen_mask.shape[1]
+        height = chosen_mask.shape[0]
         mask = Image.new("RGBA", (width, height), (0, 0, 0, 1))  # create an opaque image mask
 
         # Convert mask back to pixels to add our mask replacing the third dimension
@@ -219,8 +224,8 @@ def fashion_design(query, mask_input, image_path):
             chosen_mask[chosen_mask == 1] = 255
 
             # create a base blank mask
-            width = chosen_mask.shape[0]
-            height = chosen_mask.shape[1]
+            width = chosen_mask.shape[1]
+            height = chosen_mask.shape[0]
             mask = Image.new("RGBA", (width, height), (0, 0, 0, 1))  # create an opaque image mask
 
             # Convert mask back to pixels to add our mask replacing the third dimension
@@ -247,7 +252,7 @@ def fashion_design(query, mask_input, image_path):
             size="512x512",
             response_format="url",
         )
-        edit_filepaths = process_dalle_images(response, f"edits_mask{i}", 'edited_images')
+        edit_filepaths = process_dalle_images(response, f"edits_mask{i}", 'edited_images', width, height)
 
         for edit_filepath in edit_filepaths:
                 finalized_urls.append(edit_filepath)
