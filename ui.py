@@ -240,26 +240,33 @@ def fashion_design(query, mask_input, image_path):
     client = OpenAI(api_key=OPENAI_API_KEY)
     finalized_urls = []
     n = 3
+    ERROR_FLAG = False
     print('Editing....')
     for i in range(num_masks-1):
         mask_path = f"mask_candidates/mask_option{i}.png"
-        response = client.images.edit(
-            model='dall-e-2',
-            image=open(image_path, "rb"),  # from the generation section
-            mask=open(mask_path, "rb"),  # from right above
-            prompt=will_change_to,  # provide a prompt to fill the space
-            n=n,
-            size="512x512",
-            response_format="url",
-        )
-        edit_filepaths = process_dalle_images(response, f"edits_mask{i}", 'edited_images', width, height)
+        try:
+            response = client.images.edit(
+                model='dall-e-2',
+                image=open(image_path, "rb"),  # from the generation section
+                mask=open(mask_path, "rb"),  # from right above
+                prompt=will_change_to,  # provide a prompt to fill the space
+                n=n,
+                size="512x512",
+                response_format="url",
+            )
+            edit_filepaths = process_dalle_images(response, f"edits_mask{i}", 'edited_images', width, height)
 
-        for edit_filepath in edit_filepaths:
-                finalized_urls.append(edit_filepath)
+            for edit_filepath in edit_filepaths:
+                    finalized_urls.append(edit_filepath)
+        except:
+            ERROR_FLAG = TRUE
+            break
 
     print('Out....')
     if len(finalized_urls) == 0:
         message = 'Edited, but none of the generated images satisfy your request... Please try again by changing your prompt.'
+    elif ERROR_FLAG:
+        message = "Don't worry! Please TRY again, some minor issue with the connection..."
     else:
         message = 'Edited Sucessfully! (Please note that the models are imperfect, so the image quality can vary significantly)'
 
@@ -281,7 +288,6 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         with gr.Column():
             gr.Markdown("### AI Fashion Gallery")
             gr.Markdown("#### Each editing could take about 120 seconds (2 minutes).")
-            gr.Markdown('#### If you have ERROR, please retry.')
             gallery_output = gr.Gallery(
                 label="AI Designs",
                 show_label=False,
