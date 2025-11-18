@@ -280,7 +280,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     with gr.Row():
         with gr.Column():
             image_input = gr.Image(label="Upload an Image", type="filepath")
-            gr.Markdown('#### Optional: If you want to draw your own mask for accuracy, please draw here.')
+            gr.Markdown('#### Optional: If you want to draw your own mask for accuracy, please draw here. You can directly use the paint brush embedded in the window below and paint the region for the mask. You may customize the size of the brush.')
             mask_input = gr.ImageMask(label="Draw mask on image")
             query_input = gr.Textbox(label="Enter your prompt", placeholder="e.g., change the shirt to a sweater")
             submit_button = gr.Button("DESIGN!", variant="primary")
